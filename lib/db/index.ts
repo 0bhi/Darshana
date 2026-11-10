@@ -2,18 +2,25 @@ import fs from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
+import postgres from "postgres";
+import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js";
 import * as schema from "./schema";
 
-function createDrizzle(client: PGlite) {
+function createPgliteDatabase(client: PGlite) {
   return drizzle(client, { schema });
 }
 
-export type Database = ReturnType<typeof createDrizzle>;
+function createPostgresDatabase(client: ReturnType<typeof postgres>) {
+  return drizzlePostgres(client, { schema });
+}
+
+export type Database = ReturnType<typeof createPostgresDatabase>;
 
 type DbGlobal = typeof globalThis & {
   __philosophyPglite?: PGlite;
   __philosophyDb?: Database;
   __philosophyDbReady?: Promise<Database>;
+  __philosophyPostgres?: ReturnType<typeof postgres>;
 };
 
 const globalForDb = globalThis as DbGlobal;
@@ -120,6 +127,28 @@ CREATE INDEX IF NOT EXISTS practice_completions_practice_slug_idx
 `;
 
 async function initialize(): Promise<Database> {
+  const connectionString = process.env.DATABASE_URL;
+
+  if (connectionString) {
+    const client = postgres(connectionString, {
+      max: 1,
+      idle_timeout: 20,
+      connect_timeout: 10,
+    });
+    await client.unsafe(SCHEMA_SQL);
+
+    const db = createPostgresDatabase(client);
+    globalForDb.__philosophyPostgres = client;
+    globalForDb.__philosophyDb = db;
+    return db;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "DATABASE_URL is required in production. Configure a hosted PostgreSQL database for Vercel.",
+    );
+  }
+
   const dataDir =
     process.env.PHILOSOPHY_DATA_DIR ??
     path.join(process.cwd(), ".data", "pglite");
@@ -127,7 +156,7 @@ async function initialize(): Promise<Database> {
 
   const client = new PGlite(dataDir);
   await client.exec(SCHEMA_SQL);
-  const db = createDrizzle(client);
+  const db = createPgliteDatabase(client) as unknown as Database;
 
   globalForDb.__philosophyPglite = client;
   globalForDb.__philosophyDb = db;

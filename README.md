@@ -9,6 +9,7 @@ An independent educational site for careful, non-dogmatic study of philosophy. I
 - MDX via `next-mdx-remote/rsc`, `remark-gfm`, and `rehype-slug`
 - Zod for content and API validation
 - PGlite + Drizzle ORM for local persistence
+- Hosted PostgreSQL + Drizzle ORM for serverless production deployments
 - Custom scrypt authentication with database-backed sessions
 - Vitest for unit tests
 
@@ -29,6 +30,7 @@ The database initializes automatically on first use and persists to `.data/pglit
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `NEXT_PUBLIC_SITE_URL` | Canonical site URL for metadata and sitemap | `http://localhost:3000` |
+| `DATABASE_URL` | Hosted PostgreSQL connection string for production | unset |
 | `PHILOSOPHY_DATA_DIR` | PGlite data directory | `.data/pglite` |
 
 ## Scripts
@@ -147,15 +149,21 @@ Local development uses PGlite, which is embedded PostgreSQL compiled to WebAssem
 
 PGlite requires a persistent filesystem and a single application process. It is suitable for local development and a persistent Node server, but not for ephemeral serverless functions or multi-instance deployments.
 
-For production on Vercel, Neon, or another managed platform, migrate to hosted PostgreSQL:
+For production on Vercel, create a hosted PostgreSQL database (for example, Neon,
+Vercel Postgres, or Supabase), then add its connection string as the `DATABASE_URL`
+environment variable in the Vercel project settings. The application initializes
+the existing schema on the first serverless connection. PGlite remains available
+when `DATABASE_URL` is unset during local development; production fails clearly
+instead of attempting to write to Vercel's ephemeral filesystem.
 
-1. Install a Postgres driver such as `postgres` or `pg`.
-2. Change `lib/db/index.ts` to use `drizzle-orm/postgres-js` or `drizzle-orm/node-postgres`.
-3. Point the connection string at your hosted database.
-4. Run `npm run db:generate` and apply the generated migration.
-5. Remove `@electric-sql/pglite` from `serverExternalPackages` if it is no longer used.
+Deploy with:
 
-The Drizzle schema in `lib/db/schema.ts` uses the Postgres dialect and should carry over without changes.
+```bash
+vercel
+```
+
+Set `NEXT_PUBLIC_SITE_URL` to the production URL as well, so metadata and the
+sitemap use the canonical host.
 
 ## Editorial standards
 
@@ -180,6 +188,6 @@ npm run build
 ## Known limitations
 
 - Some external reading links may change or disappear; citations remain the authoritative reference.
-- PGlite is not designed for serverless or horizontally scaled deployment.
+- Local PGlite data is not shared with the hosted production database.
 - The notebook does not merge anonymous local data into an account after sign-in.
 - Content is educational and does not replace sustained reading of primary texts or professional care.
